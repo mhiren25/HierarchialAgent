@@ -89,26 +89,38 @@ async def chat(request: ChatRequest):
         
         # Track agent path and collect all outputs
         agent_path = []
-        all_messages = []
+        final_state = None
         
-        # Execute agent graph and collect ALL events
-        for event in agent_system.stream(input_state, config, stream_mode="updates"):
-            for node_name, node_output in event.items():
-                if node_name not in agent_path:
-                    agent_path.append(node_name)
-                
-                # Collect messages from each node
-                if "messages" in node_output and node_output["messages"]:
-                    for msg in node_output["messages"]:
-                        if hasattr(msg, 'content') and msg.content:
-                            all_messages.append(msg)
+        # Execute agent graph with recursion limit
+        events_count = 0
+        max_events = 20  # Prevent infinite loops
         
-        # Get the final response - last AI message
+        for event in agent_system.stream(input_state, config, stream_mode="values"):
+            events_count += 1
+            if events_count > max_events:
+                print(f"⚠️ Max events reached, stopping execution")
+                break
+            
+            final_state = event
+            
+            # Track which agents have been involved
+            if "messages" in event:
+                for msg in event["messages"]:
+                    if hasattr(msg, 'name') and msg.name and msg.name not in agent_path:
+                        agent_path.append(msg.name)
+        
+        # Extract response from final state
         response_content = "No response generated"
-        if all_messages:
-            # Get the last message that has actual content
-            for msg in reversed(all_messages):
-                if hasattr(msg, 'content') and msg.content and len(msg.content.strip()) > 0:
+        if final_state and "messages" in final_state:
+            # Get all AI messages
+            ai_messages = [
+                msg for msg in final_state["messages"] 
+                if hasattr(msg, 'type') and msg.type == 'ai' and hasattr(msg, 'content')
+            ]
+            
+            # Get the last substantial message
+            for msg in reversed(ai_messages):
+                if msg.content and len(msg.content.strip()) > 0:
                     response_content = msg.content
                     break
         
@@ -128,7 +140,8 @@ async def chat(request: ChatRequest):
             agent_path=agent_path,
             metadata={
                 "timestamp": datetime.now().isoformat(),
-                "message_count": len(active_threads[thread_id])
+                "message_count": len(active_threads[thread_id]),
+                "events_processed": events_count
             }
         )
         
@@ -173,7 +186,7 @@ async def delete_thread(thread_id: str):
 @app.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
     """
-    WebSocket endpoint for streaming responses
+    WebSocket endpoint for streaming responses with detailed agent activity
     """
     await websocket.accept()
     
@@ -193,40 +206,105 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
                 "messages": [HumanMessage(content=user_message)]
             }
             
-            # Stream agent execution
+            # Stream agent execution with detailed tracking
             agent_path = []
+            final_state = None
+            events_count = 0
+            max_events = 20
             
-            for event in agent_system.stream(input_state, config, stream_mode="updates"):
-                for node_name, node_output in event.items():
-                    agent_path.append(node_name)
-                    
-                    # Send intermediate updates
+            for event in agent_system.stream(input_state, config, stream_mode="values"):
+                events_count += 1
+                if events_count > max_events:
                     await websocket.send_json({
-                        "type": "agent_update",
-                        "agent": node_name,
-                        "timestamp": datetime.now().isoformat()
+                        "type": "warning",
+                        "message": "Max execution steps reached, completing..."
                     })
+                    break
+                
+                final_state = event
+                
+                if "messages" in event:
+                    latest_messages = event["messages"][-3:]  # Get last 3 messages
                     
-                    # Send message if available
-                    if "messages" in node_output and node_output["messages"]:
-                        last_msg = node_output["messages"][-1]
-                        if hasattr(last_msg, 'content'):
+                    for msg in latest_messages:
+                        agent_name = getattr(msg, 'name', 'unknown')
+                        msg_type = getattr(msg, 'type', 'unknown')
+                        
+                        # Track agent activation
+                        if agent_name and agent_name not in agent_path:
+                            agent_path.append(agent_name)
                             await websocket.send_json({
-                                "type": "message_chunk",
-                                "content": last_msg.content,
-                                "agent": node_name
+                                "type": "agent_start",
+                                "agent": agent_name,
+                                "timestamp": datetime.now().isoformat()
                             })
+                        
+                        # Send tool calls
+                        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                            for tool_call in msg.tool_calls:
+                                await websocket.send_json({
+                                    "type": "tool_call",
+                                    "agent": agent_name,
+                                    "tool_name": tool_call.get('name', 'unknown'),
+                                    "tool_args": tool_call.get('args', {}),
+                                    "timestamp": datetime.now().isoformat()
+                                })
+                        
+                        # Send tool responses
+                        if msg_type == 'tool':
+                            await websocket.send_json({
+                                "type": "tool_response",
+                                "agent": agent_name,
+                                "content": msg.content[:500] if hasattr(msg, 'content') else '',  # Truncate long responses
+                                "timestamp": datetime.now().isoformat()
+                            })
+                        
+                        # Send agent responses
+                        if msg_type == 'ai' and hasattr(msg, 'content') and msg.content:
+                            await websocket.send_json({
+                                "type": "agent_response",
+                                "agent": agent_name,
+                                "content": msg.content,
+                                "timestamp": datetime.now().isoformat()
+                            })
+            
+            # Get final response
+            response_content = "No response generated"
+            if final_state and "messages" in final_state:
+                ai_messages = [
+                    msg for msg in final_state["messages"]
+                    if hasattr(msg, 'type') and msg.type == 'ai' and hasattr(msg, 'content')
+                ]
+                
+                for msg in reversed(ai_messages):
+                    if msg.content and len(msg.content.strip()) > 0:
+                        response_content = msg.content
+                        break
+            
+            # Store in thread history
+            if thread_id not in active_threads:
+                active_threads[thread_id] = []
+            active_threads[thread_id].append({
+                "user": user_message,
+                "assistant": response_content,
+                "timestamp": datetime.now().isoformat(),
+                "agent_path": agent_path
+            })
             
             # Send completion
             await websocket.send_json({
                 "type": "complete",
                 "agent_path": agent_path,
+                "final_response": response_content,
+                "events_processed": events_count,
                 "timestamp": datetime.now().isoformat()
             })
             
     except WebSocketDisconnect:
         print(f"WebSocket disconnected for thread {thread_id}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         await websocket.send_json({
             "type": "error",
             "error": str(e)
