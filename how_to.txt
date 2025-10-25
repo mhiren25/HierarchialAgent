@@ -9,3 +9,11 @@ cp .env.example .env
 # Frontend
 cd frontend
 npm install
+
+# Terminal 1 - Backend
+cd backend
+python main.py
+
+# Terminal 2 - Frontend
+cd frontend
+npm run dev
