@@ -60,23 +60,32 @@ def create_supervisor_node(llm: ChatOpenAI, members: list[str]):
             SystemMessage(content=system_prompt)
         ] + state["messages"]
         
+        # Add routing instruction
+        messages.append(
+            HumanMessage(content=f"Based on the conversation above, who should act next? Select one of: {', '.join(options)}")
+        )
+        
         # Get LLM response for routing
         response = llm.invoke(messages)
         
         # Parse the response to determine next action
         content = response.content.strip().upper()
         
-        # Determine next route
-        if "FINISH" in content:
+        # Check if we've already gotten responses from agents
+        # If we have assistant messages with substantial content, consider finishing
+        assistant_messages = [m for m in state["messages"] if hasattr(m, 'type') and m.type == 'ai']
+        
+        # Determine next route with better logic to prevent loops
+        if "FINISH" in content or len(assistant_messages) >= 3:  # Prevent infinite loops
             next_agent = "FINISH"
-        elif "LOG" in content:
+        elif "LOG" in content and "log_team" not in [getattr(m, 'name', '') for m in state["messages"][-5:]]:
             next_agent = "log_team"
-        elif "KNOWLEDGE" in content:
+        elif "KNOWLEDGE" in content and "knowledge_team" not in [getattr(m, 'name', '') for m in state["messages"][-5:]]:
             next_agent = "knowledge_team"
-        elif "DB" in content or "DATABASE" in content:
+        elif "DB" in content or "DATABASE" in content and "db_team" not in [getattr(m, 'name', '') for m in state["messages"][-5:]]:
             next_agent = "db_team"
         else:
-            # Default to finish if unclear
+            # If unclear or agent already called, finish
             next_agent = "FINISH"
         
         return {"next": next_agent}
