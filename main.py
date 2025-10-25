@@ -75,10 +75,10 @@ async def chat(request: ChatRequest):
     Process chat messages through the hierarchical agent system
     """
     if not agent_system:
-        raise HTTPException(status_code=503, message="Agent system not initialized")
+        raise HTTPException(status_code=503, detail="Agent system not initialized")
     
     # Generate thread ID if not provided
-    thread_id = request.thread_id or f"thread_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    thread_id = request.thread_id or f"thread_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     
     try:
         # Prepare input
@@ -87,22 +87,30 @@ async def chat(request: ChatRequest):
             "messages": [HumanMessage(content=request.message)]
         }
         
-        # Track agent path
+        # Track agent path and collect all outputs
         agent_path = []
+        all_messages = []
         
-        # Execute agent graph
-        result = None
+        # Execute agent graph and collect ALL events
         for event in agent_system.stream(input_state, config, stream_mode="updates"):
             for node_name, node_output in event.items():
-                agent_path.append(node_name)
-                result = node_output
+                if node_name not in agent_path:
+                    agent_path.append(node_name)
+                
+                # Collect messages from each node
+                if "messages" in node_output and node_output["messages"]:
+                    for msg in node_output["messages"]:
+                        if hasattr(msg, 'content') and msg.content:
+                            all_messages.append(msg)
         
-        # Extract final response
-        if result and "messages" in result:
-            final_message = result["messages"][-1]
-            response_content = final_message.content if hasattr(final_message, 'content') else str(final_message)
-        else:
-            response_content = "No response generated"
+        # Get the final response - last AI message
+        response_content = "No response generated"
+        if all_messages:
+            # Get the last message that has actual content
+            for msg in reversed(all_messages):
+                if hasattr(msg, 'content') and msg.content and len(msg.content.strip()) > 0:
+                    response_content = msg.content
+                    break
         
         # Store thread
         if thread_id not in active_threads:
@@ -110,7 +118,8 @@ async def chat(request: ChatRequest):
         active_threads[thread_id].append({
             "user": request.message,
             "assistant": response_content,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "agent_path": agent_path
         })
         
         return ChatResponse(
@@ -124,6 +133,8 @@ async def chat(request: ChatRequest):
         )
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/threads")
