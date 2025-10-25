@@ -14,12 +14,15 @@ Supervisor Agent
 ## Features
 
 - **Hierarchical Agent System**: Supervisor coordinates specialized sub-teams
-- **Multi-Order Log Comparison**: Compare good vs bad orders with detailed analysis
+- **Multi-Order Log Comparison**: Compare good vs bad orders with detailed analysis and date support
 - **RAG Knowledge Base**: Semantic search over documentation
 - **Natural Language to SQL**: Convert questions to database queries
 - **Conversation Continuity**: Multi-turn conversations with context preservation
 - **Real-time Streaming**: WebSocket support for live updates
-- **Beautiful React UI**: Modern, responsive interface
+- **Live Agent Communication**: Visual representation of agents working together in real-time
+- **Beautiful Modern UI**: Gradient designs, smooth animations, responsive layout
+- **Agent Activity Visualization**: See which agents are active and their execution flow
+- **Custom Styling**: Tailwind CSS with custom animations and themes
 
 ## Project Structure
 
@@ -54,6 +57,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 2. **Install dependencies**:
 ```bash
 pip install -r requirements.txt
+
+# Verify all dependencies installed correctly (includes python-dateutil for date parsing)
+python check_dependencies.py
 ```
 
 3. **Configure environment**:
@@ -81,7 +87,21 @@ npm install
 yarn install
 ```
 
-2. **Start development server**:
+2. **Ensure you have all required files**:
+```
+frontend/
+├── src/
+│   ├── App.jsx              # Main React component
+│   ├── main.jsx             # React entry point
+│   └── index.css            # Tailwind CSS + custom styles
+├── index.html               # HTML entry point
+├── package.json
+├── vite.config.js
+├── tailwind.config.js       # Tailwind configuration
+└── postcss.config.js        # PostCSS configuration
+```
+
+3. **Start development server**:
 ```bash
 npm run dev
 # or
@@ -89,6 +109,19 @@ yarn dev
 ```
 
 The UI will be available at `http://localhost:5173`
+
+### Quick Setup (Unix/Linux/Mac)
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+The setup script will:
+- Create virtual environment
+- Install all dependencies
+- Set up configuration files
+- Display next steps
 
 ## API Endpoints
 
