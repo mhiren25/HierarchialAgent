@@ -17,3 +17,15 @@ python main.py
 # Terminal 2 - Frontend
 cd frontend
 npm run dev
+
+
+frontend/
+├── src/
+│   ├── App.jsx              # Main React component
+│   ├── main.jsx             # React entry point
+│   └── index.css            # Tailwind CSS + custom styles
+├── index.html               # HTML entry point
+├── package.json
+├── vite.config.js
+├── tailwind.config.js       # Tailwind configuration
+└── postcss.config.js        # PostCSS configuration
