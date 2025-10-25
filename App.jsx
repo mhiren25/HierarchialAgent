@@ -3,6 +3,69 @@ import { Send, Bot, User, Clock, Database, BookOpen, FileText, Loader2, Trash2, 
 
 const API_BASE_URL = 'http://localhost:8000';
 
+// Agent Path Summary Component (shown in messages)
+const AgentPathSummary = ({ agentPath }) => {
+  const agents = [
+    { name: 'supervisor', label: 'Supervisor', icon: Bot, color: 'purple' },
+    { name: 'log_team', label: 'Log Team', icon: FileText, color: 'orange' },
+    { name: 'knowledge_team', label: 'Knowledge', icon: BookOpen, color: 'blue' },
+    { name: 'db_team', label: 'Database', icon: Database, color: 'green' },
+  ];
+
+  const getAgentColor = (name) => {
+    const colors = {
+      supervisor: 'bg-purple-500',
+      log_team: 'bg-orange-500',
+      knowledge_team: 'bg-blue-500',
+      db_team: 'bg-green-500',
+    };
+    return colors[name] || 'bg-gray-500';
+  };
+
+  const getAgentInfo = (name) => {
+    return agents.find(a => a.name === name);
+  };
+
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-200">
+      <div className="flex items-center gap-2 mb-3">
+        <Activity className="w-4 h-4 text-slate-500" />
+        <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
+          Agent Execution Flow
+        </span>
+      </div>
+      
+      <div className="flex items-center gap-2 flex-wrap">
+        {agentPath.map((agentName, idx) => {
+          const agentInfo = getAgentInfo(agentName);
+          const Icon = agentInfo?.icon || Bot;
+          
+          return (
+            <React.Fragment key={idx}>
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border-2 rounded-lg shadow-sm">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${getAgentColor(agentName)}`}>
+                  <Icon className="w-3.5 h-3.5 text-white" />
+                </div>
+                <span className="text-xs font-medium text-slate-700">
+                  {agentInfo?.label || agentName}
+                </span>
+                <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+              </div>
+              {idx < agentPath.length - 1 && (
+                <div className="text-slate-400">→</div>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+      
+      <div className="mt-2 text-xs text-slate-500">
+        {agentPath.length} agent{agentPath.length !== 1 ? 's' : ''} involved in processing this request
+      </div>
+    </div>
+  );
+};
+
 // Agent Communication Component
 const AgentCommunication = ({ agentPath, currentAgent, isProcessing }) => {
   const agents = [
@@ -177,7 +240,8 @@ export default function LangGraphChatApp() {
         formattedMessages.push({
           role: 'assistant',
           content: msg.assistant,
-          timestamp: msg.timestamp
+          timestamp: msg.timestamp,
+          agentPath: msg.agent_path || [] // Include agent path from history
         });
       });
       
@@ -195,8 +259,8 @@ export default function LangGraphChatApp() {
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    setLiveAgentUpdates([]);
-    setAgentPath([]);
+    const tempAgentUpdates = [];
+    const tempAgentPath = [];
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ message }));
@@ -207,48 +271,53 @@ export default function LangGraphChatApp() {
 
       if (data.type === 'agent_update') {
         setCurrentAgent(data.agent);
-        setAgentPath(prev => {
-          if (!prev.includes(data.agent)) {
-            return [...prev, data.agent];
-          }
-          return prev;
-        });
-        setLiveAgentUpdates(prev => [...prev, {
+        if (!tempAgentPath.includes(data.agent)) {
+          tempAgentPath.push(data.agent);
+          setAgentPath([...tempAgentPath]);
+        }
+        tempAgentUpdates.push({
           type: 'agent',
           agent: data.agent,
           timestamp: data.timestamp
-        }]);
+        });
+        setLiveAgentUpdates([...tempAgentUpdates]);
       } else if (data.type === 'message_chunk') {
-        setLiveAgentUpdates(prev => [...prev, {
+        tempAgentUpdates.push({
           type: 'message',
           content: data.content,
           agent: data.agent,
           timestamp: Date.now()
-        }]);
+        });
+        setLiveAgentUpdates([...tempAgentUpdates]);
       } else if (data.type === 'complete') {
         setCurrentAgent(null);
         setIsLoading(false);
-        // Collect all message chunks
-        const messageChunks = liveAgentUpdates
-          .filter(u => u.type === 'message')
-          .map(u => u.content);
         
-        if (messageChunks.length > 0) {
-          const fullMessage = messageChunks[messageChunks.length - 1];
-          const assistantMessage = {
-            role: 'assistant',
-            content: fullMessage,
-            timestamp: new Date().toISOString(),
-            agentPath: data.agent_path
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-          setAgentPath(data.agent_path);
-        }
+        // Use final_response from backend
+        const finalResponse = data.final_response || "No response generated";
+        
+        const assistantMessage = {
+          role: 'assistant',
+          content: finalResponse,
+          timestamp: data.timestamp || new Date().toISOString(),
+          agentPath: data.agent_path
+        };
+        
+        setMessages(prev => [...prev, assistantMessage]);
+        setAgentPath(data.agent_path);
+        setLiveAgentUpdates([]); // Clear live updates after completion
         loadThreads();
       } else if (data.type === 'error') {
         console.error('WebSocket error:', data.error);
         setIsLoading(false);
         setCurrentAgent(null);
+        const errorMessage = {
+          role: 'assistant',
+          content: `Error: ${data.error}`,
+          timestamp: new Date().toISOString(),
+          isError: true
+        };
+        setMessages(prev => [...prev, errorMessage]);
       }
     };
 
@@ -579,19 +648,9 @@ export default function LangGraphChatApp() {
                   {formatContent(message.content)}
                 </div>
                 
-                {message.agentPath && message.agentPath.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-slate-200 flex items-center gap-2 flex-wrap">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-xs text-slate-500 font-medium">Executed by:</span>
-                    {message.agentPath.map((agent, i) => (
-                      <span
-                        key={i}
-                        className={`text-xs px-2.5 py-1 rounded-md border font-medium ${getAgentColor(agent)}`}
-                      >
-                        {agent.replace('_', ' ')}
-                      </span>
-                    ))}
-                  </div>
+                {/* Show agent execution path for assistant messages */}
+                {message.role === 'assistant' && message.agentPath && message.agentPath.length > 0 && (
+                  <AgentPathSummary agentPath={message.agentPath} />
                 )}
                 
                 <div className="mt-3 text-xs text-slate-400 flex items-center gap-2">
