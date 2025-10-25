@@ -1,0 +1,19 @@
+# OpenAI API Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
+DEBUG=True
+
+# CORS Origins (comma-separated)
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+
+# Model Configuration
+MODEL_NAME=gpt-4o-mini
+TEMPERATURE=0
+
+# Optional: LangSmith Tracing (for debugging)
+# LANGCHAIN_TRACING_V2=true
+# LANGCHAIN_API_KEY=your_langsmith_api_key
+# LANGCHAIN_PROJECT=langgraph-teams
