@@ -3,7 +3,110 @@ import { Send, Bot, User, Clock, Database, BookOpen, FileText, Loader2, Trash2, 
 
 const API_BASE_URL = 'http://localhost:8000';
 
-// Agent Path Summary Component (shown in messages)
+// Agent Activity Detail Component
+const AgentActivityDetail = ({ activities }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  if (!activities || activities.length === 0) return null;
+  
+  const getActivityIcon = (type) => {
+    switch(type) {
+      case 'agent_start': return <Zap className="w-4 h-4 text-purple-600" />;
+      case 'tool_call': return <Activity className="w-4 h-4 text-blue-600" />;
+      case 'tool_response': return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'agent_response': return <MessageSquare className="w-4 h-4 text-blue-600" />;
+      case 'warning': return <AlertCircle className="w-4 h-4 text-yellow-600" />;
+      default: return <Bot className="w-4 h-4 text-gray-600" />;
+    }
+  };
+  
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-200">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors w-full"
+      >
+        <Activity className="w-4 h-4" />
+        <span>Agent Activity Details ({activities.length} events)</span>
+        <span className="ml-auto text-xs text-slate-500">
+          {isExpanded ? '▼' : '▶'}
+        </span>
+      </button>
+      
+      {isExpanded && (
+        <div className="mt-3 space-y-2 max-h-96 overflow-y-auto custom-scrollbar bg-slate-50 rounded-lg p-3">
+          {activities.map((activity, idx) => (
+            <div key={idx} className="flex items-start gap-3 text-xs p-2 bg-white rounded border border-slate-200">
+              <div className="mt-0.5">
+                {getActivityIcon(activity.type)}
+              </div>
+              <div className="flex-1">
+                {activity.type === 'agent_start' && (
+                  <div>
+                    <span className="font-semibold text-purple-700">{activity.agent}</span>
+                    <span className="text-slate-600"> started</span>
+                  </div>
+                )}
+                
+                {activity.type === 'tool_call' && (
+                  <div>
+                    <span className="font-semibold text-blue-700">{activity.agent}</span>
+                    <span className="text-slate-600"> called tool: </span>
+                    <code className="bg-blue-50 px-1.5 py-0.5 rounded text-blue-700 font-mono">
+                      {activity.tool_name}
+                    </code>
+                    {activity.tool_args && Object.keys(activity.tool_args).length > 0 && (
+                      <div className="mt-1 text-slate-500">
+                        <details>
+                          <summary className="cursor-pointer">View args</summary>
+                          <pre className="text-xs mt-1">{JSON.stringify(activity.tool_args, null, 2)}</pre>
+                        </details>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {activity.type === 'tool_response' && (
+                  <div>
+                    <span className="font-semibold text-green-700">Tool Response</span>
+                    <div className="mt-1 text-slate-600 font-mono text-xs bg-green-50 p-2 rounded max-h-32 overflow-y-auto">
+                      {activity.content && activity.content.substring(0, 200)}
+                      {activity.content && activity.content.length > 200 && '...'}
+                    </div>
+                  </div>
+                )}
+                
+                {activity.type === 'agent_response' && (
+                  <div>
+                    <span className="font-semibold text-blue-700">{activity.agent}</span>
+                    <span className="text-slate-600"> responded</span>
+                    <div className="mt-1 text-slate-700">
+                      {activity.content && activity.content.substring(0, 150)}
+                      {activity.content && activity.content.length > 150 && '...'}
+                    </div>
+                  </div>
+                )}
+                
+                {activity.type === 'warning' && (
+                  <div>
+                    <span className="font-semibold text-yellow-700">Warning:</span>
+                    <span className="text-slate-600"> {activity.message}</span>
+                  </div>
+                )}
+                
+                <div className="text-slate-400 mt-1">
+                  {new Date(activity.timestamp).toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Agent Path Summary Component
 const AgentPathSummary = ({ agentPath }) => {
   const agents = [
     { name: 'supervisor', label: 'Supervisor', icon: Bot, color: 'purple' },
@@ -92,7 +195,6 @@ const AgentCommunication = ({ agentPath, currentAgent, isProcessing }) => {
         <h3 className="font-semibold text-slate-800">Agent Communication</h3>
       </div>
 
-      {/* Agent Flow Visualization */}
       <div className="flex items-center justify-between mb-6">
         {agents.map((agent, idx) => {
           const isActive = currentAgent === agent.name;
@@ -142,7 +244,6 @@ const AgentCommunication = ({ agentPath, currentAgent, isProcessing }) => {
         })}
       </div>
 
-      {/* Agent Activity Log */}
       {agentPath.length > 0 && (
         <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Activity Log</p>
@@ -164,34 +265,7 @@ const AgentCommunication = ({ agentPath, currentAgent, isProcessing }) => {
   );
 };
 
-// Live Streaming Message Component
-const StreamingMessage = ({ content, agentName }) => {
-  const [displayedContent, setDisplayedContent] = useState('');
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  useEffect(() => {
-    if (currentIndex < content.length) {
-      const timeout = setTimeout(() => {
-        setDisplayedContent(prev => prev + content[currentIndex]);
-        setCurrentIndex(prev => prev + 1);
-      }, 20);
-      return () => clearTimeout(timeout);
-    }
-  }, [currentIndex, content]);
-
-  return (
-    <div className="animate-fade-in">
-      <div className="prose prose-sm max-w-none">
-        {displayedContent}
-        {currentIndex < content.length && (
-          <span className="inline-block w-2 h-4 bg-blue-500 ml-1 animate-pulse"></span>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export default function LangGraphChatApp() {
+export default function App() {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -241,7 +315,7 @@ export default function LangGraphChatApp() {
           role: 'assistant',
           content: msg.assistant,
           timestamp: msg.timestamp,
-          agentPath: msg.agent_path || [] // Include agent path from history
+          agentPath: msg.agent_path || []
         });
       });
       
@@ -269,44 +343,74 @@ export default function LangGraphChatApp() {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      if (data.type === 'agent_update') {
+      if (data.type === 'agent_start') {
         setCurrentAgent(data.agent);
         if (!tempAgentPath.includes(data.agent)) {
           tempAgentPath.push(data.agent);
           setAgentPath([...tempAgentPath]);
         }
         tempAgentUpdates.push({
-          type: 'agent',
+          type: 'agent_start',
           agent: data.agent,
           timestamp: data.timestamp
         });
         setLiveAgentUpdates([...tempAgentUpdates]);
-      } else if (data.type === 'message_chunk') {
+        
+      } else if (data.type === 'tool_call') {
         tempAgentUpdates.push({
-          type: 'message',
-          content: data.content,
+          type: 'tool_call',
           agent: data.agent,
-          timestamp: Date.now()
+          tool_name: data.tool_name,
+          tool_args: data.tool_args,
+          timestamp: data.timestamp
         });
         setLiveAgentUpdates([...tempAgentUpdates]);
+        
+      } else if (data.type === 'tool_response') {
+        tempAgentUpdates.push({
+          type: 'tool_response',
+          agent: data.agent,
+          content: data.content,
+          timestamp: data.timestamp
+        });
+        setLiveAgentUpdates([...tempAgentUpdates]);
+        
+      } else if (data.type === 'agent_response') {
+        tempAgentUpdates.push({
+          type: 'agent_response',
+          agent: data.agent,
+          content: data.content,
+          timestamp: data.timestamp
+        });
+        setLiveAgentUpdates([...tempAgentUpdates]);
+        
+      } else if (data.type === 'warning') {
+        tempAgentUpdates.push({
+          type: 'warning',
+          message: data.message,
+          timestamp: new Date().toISOString()
+        });
+        setLiveAgentUpdates([...tempAgentUpdates]);
+        
       } else if (data.type === 'complete') {
         setCurrentAgent(null);
         setIsLoading(false);
         
-        // Use final_response from backend
         const finalResponse = data.final_response || "No response generated";
         
         const assistantMessage = {
           role: 'assistant',
           content: finalResponse,
           timestamp: data.timestamp || new Date().toISOString(),
-          agentPath: data.agent_path
+          agentPath: data.agent_path,
+          agentActivity: [...tempAgentUpdates]
         };
         
         setMessages(prev => [...prev, assistantMessage]);
         setAgentPath(data.agent_path);
-        setLiveAgentUpdates([]); // Clear live updates after completion
+        setLiveAgentUpdates([]);
         loadThreads();
+        
       } else if (data.type === 'error') {
         console.error('WebSocket error:', data.error);
         setIsLoading(false);
@@ -351,12 +455,10 @@ export default function LangGraphChatApp() {
     const tid = threadId || `thread_${Date.now()}`;
     setThreadId(tid);
 
-    // Try WebSocket first, fallback to HTTP
     try {
       sendMessageWithWebSocket(messageToSend, tid);
     } catch (error) {
       console.log('WebSocket failed, using HTTP fallback');
-      // HTTP fallback
       try {
         const response = await fetch(`${API_BASE_URL}/chat`, {
           method: 'POST',
@@ -489,7 +591,6 @@ export default function LangGraphChatApp() {
           </button>
         </div>
 
-        {/* Threads List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
             Recent Conversations
@@ -534,7 +635,6 @@ export default function LangGraphChatApp() {
           )}
         </div>
 
-        {/* Agent Path Display */}
         {(agentPath.length > 0 || isLoading) && (
           <div className="p-4 bg-gradient-to-r from-slate-50 to-blue-50 border-t border-slate-200">
             <h3 className="text-xs font-semibold text-slate-600 mb-3 flex items-center gap-2">
@@ -559,7 +659,6 @@ export default function LangGraphChatApp() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {/* Header */}
         <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -600,17 +699,21 @@ export default function LangGraphChatApp() {
                   Ask me to analyze logs, search documentation, or query the database.
                 </p>
                 <div className="grid grid-cols-3 gap-4 text-left">
-                  {[
-                    { icon: FileText, color: 'orange', title: 'Log Analysis', desc: 'Compare orders and find failures' },
-                    { icon: BookOpen, color: 'blue', title: 'Knowledge Base', desc: 'Search docs and guides' },
-                    { icon: Database, color: 'green', title: 'Database', desc: 'Query data with natural language' }
-                  ].map(({ icon: Icon, color, title, desc }) => (
-                    <div key={title} className={`p-5 bg-${color}-50 border border-${color}-200 rounded-xl hover:shadow-lg transition-all cursor-pointer`}>
-                      <Icon className={`w-7 h-7 text-${color}-600 mb-3`} />
-                      <h4 className="font-semibold text-sm text-slate-800 mb-1">{title}</h4>
-                      <p className="text-xs text-slate-600">{desc}</p>
-                    </div>
-                  ))}
+                  <div className="p-5 bg-orange-50 border border-orange-200 rounded-xl hover:shadow-lg transition-all cursor-pointer">
+                    <FileText className="w-7 h-7 text-orange-600 mb-3" />
+                    <h4 className="font-semibold text-sm text-slate-800 mb-1">Log Analysis</h4>
+                    <p className="text-xs text-slate-600">Compare orders and find failures</p>
+                  </div>
+                  <div className="p-5 bg-blue-50 border border-blue-200 rounded-xl hover:shadow-lg transition-all cursor-pointer">
+                    <BookOpen className="w-7 h-7 text-blue-600 mb-3" />
+                    <h4 className="font-semibold text-sm text-slate-800 mb-1">Knowledge Base</h4>
+                    <p className="text-xs text-slate-600">Search docs and guides</p>
+                  </div>
+                  <div className="p-5 bg-green-50 border border-green-200 rounded-xl hover:shadow-lg transition-all cursor-pointer">
+                    <Database className="w-7 h-7 text-green-600 mb-3" />
+                    <h4 className="font-semibold text-sm text-slate-800 mb-1">Database</h4>
+                    <p className="text-xs text-slate-600">Query data with natural language</p>
+                  </div>
                 </div>
                 <div className="mt-8 text-sm text-slate-500 bg-slate-50 rounded-lg p-4 border border-slate-200">
                   <p className="font-semibold mb-2">💡 Try these examples:</p>
@@ -648,9 +751,13 @@ export default function LangGraphChatApp() {
                   {formatContent(message.content)}
                 </div>
                 
-                {/* Show agent execution path for assistant messages */}
                 {message.role === 'assistant' && message.agentPath && message.agentPath.length > 0 && (
-                  <AgentPathSummary agentPath={message.agentPath} />
+                  <>
+                    <AgentPathSummary agentPath={message.agentPath} />
+                    {message.agentActivity && message.agentActivity.length > 0 && (
+                      <AgentActivityDetail activities={message.agentActivity} />
+                    )}
+                  </>
                 )}
                 
                 <div className="mt-3 text-xs text-slate-400 flex items-center gap-2">
@@ -667,51 +774,111 @@ export default function LangGraphChatApp() {
             </div>
           ))}
 
-          {/* Live Agent Communication Visualization */}
           {isLoading && (
             <div className="space-y-4">
-              {/* Agent Communication Panel */}
               <AgentCommunication 
                 agentPath={agentPath}
                 currentAgent={currentAgent}
                 isProcessing={isLoading}
               />
 
-              {/* Live Updates from Agents */}
               {liveAgentUpdates.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <div className="flex items-center gap-2 mb-4">
                     <Activity className="w-5 h-5 text-blue-600 animate-pulse" />
                     <h4 className="font-semibold text-slate-800">Live Agent Activity</h4>
                   </div>
-                  <div className="space-y-3 max-h-48 overflow-y-auto custom-scrollbar">
+                  <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
                     {liveAgentUpdates.map((update, idx) => (
-                      <div key={idx} className="flex items-start gap-3 text-sm animate-slide-up">
-                        {update.type === 'agent' ? (
+                      <div key={idx} className="flex items-start gap-3 text-sm animate-slide-up bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        {update.type === 'agent_start' ? (
                           <>
                             <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
                               <Zap className="w-4 h-4 text-purple-600" />
                             </div>
                             <div>
                               <p className="font-medium text-slate-700">
-                                {update.agent.replace('_', ' ')} activated
+                                🚀 {update.agent.replace('_', ' ')} activated
                               </p>
                               <p className="text-xs text-slate-400">
                                 {new Date(update.timestamp).toLocaleTimeString()}
                               </p>
                             </div>
                           </>
-                        ) : (
+                        ) : update.type === 'tool_call' ? (
                           <>
                             <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <Activity className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-slate-700">
+                                🔧 Tool Call: <code className="bg-blue-50 px-2 py-0.5 rounded text-blue-700 font-mono text-xs">{update.tool_name}</code>
+                              </p>
+                              <p className="text-xs text-slate-500 mt-1">
+                                by {update.agent.replace('_', ' ')}
+                              </p>
+                              {update.tool_args && Object.keys(update.tool_args).length > 0 && (
+                                <details className="mt-2">
+                                  <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-700">
+                                    View arguments
+                                  </summary>
+                                  <pre className="text-xs mt-1 bg-white p-2 rounded border border-slate-200 overflow-x-auto">
+                                    {JSON.stringify(update.tool_args, null, 2)}
+                                  </pre>
+                                </details>
+                              )}
+                            </div>
+                          </>
+                        ) : update.type === 'tool_response' ? (
+                          <>
+                            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <CheckCircle className="w-4 h-4 text-green-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-slate-700">
+                                ✅ Tool Response
+                              </p>
+                              <div className="mt-1 text-xs text-slate-600 bg-green-50 p-2 rounded font-mono max-h-32 overflow-y-auto">
+                                {update.content}
+                              </div>
+                            </div>
+                          </>
+                        ) : update.type === 'agent_response' ? (
+                          <>
+                            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <MessageSquare className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-slate-700">
+                                💬 {update.agent.replace('_', ' ')} response
+                              </p>
+                              <p className="text-slate-600 mt-1 text-xs line-clamp-3">
+                                {update.content}
+                              </p>
+                            </div>
+                          </>
+                        ) : update.type === 'warning' ? (
+                          <>
+                            <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <AlertCircle className="w-4 h-4 text-yellow-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-yellow-700">
+                                ⚠️ {update.message}
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
                               {getAgentIcon(update.agent)}
                             </div>
                             <div className="flex-1">
                               <p className="text-xs text-slate-500 mb-1">
-                                {update.agent.replace('_', ' ')}
+                                {update.agent?.replace('_', ' ')}
                               </p>
-                              <p className="text-slate-700 line-clamp-2">
-                                {update.content.substring(0, 100)}...
+                              <p className="text-slate-700">
+                                {update.content?.substring(0, 100)}...
                               </p>
                             </div>
                           </>
@@ -722,7 +889,6 @@ export default function LangGraphChatApp() {
                 </div>
               )}
 
-              {/* Typing Indicator */}
               <div className="flex gap-4 justify-start">
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg relative">
                   <Bot className="w-6 h-6 text-white" />
@@ -786,7 +952,6 @@ export default function LangGraphChatApp() {
               </div>
             )}
 
-            {/* Quick Actions */}
             <div className="mt-4 flex gap-2 flex-wrap">
               <button
                 onClick={() => setInputValue("Compare orders GOOD001 and BAD001")}
