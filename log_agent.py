@@ -9,7 +9,14 @@ from langgraph.prebuilt import create_react_agent
 import json
 import re
 from datetime import datetime, timedelta
-from dateutil import parser as date_parser
+
+# Import dateutil for flexible date parsing
+try:
+    from dateutil import parser as date_parser
+except ImportError:
+    print("⚠️  Warning: python-dateutil not installed. Install with: pip install python-dateutil")
+    # Fallback to basic datetime parsing
+    date_parser = None
 
 # Log investigation tools
 @tool
@@ -27,8 +34,13 @@ def fetch_order_logs(order_id: str, order_date: str = None) -> str:
     # Parse the date
     if order_date:
         try:
-            parsed_date = date_parser.parse(order_date)
-        except:
+            if date_parser:
+                parsed_date = date_parser.parse(order_date)
+            else:
+                # Fallback to basic parsing
+                parsed_date = datetime.fromisoformat(order_date.replace('Z', '+00:00'))
+        except Exception as e:
+            print(f"Date parsing failed: {e}, using current date")
             parsed_date = datetime.now()
     else:
         parsed_date = datetime.now()
