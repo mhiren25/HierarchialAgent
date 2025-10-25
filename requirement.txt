@@ -15,9 +15,15 @@ python-multipart>=0.0.9
 faiss-cpu>=1.8.0
 tiktoken>=0.7.0
 
+# Date Parsing (REQUIRED for log_team.py)
+python-dateutil>=2.9.0
+
 # Utilities
 python-dotenv>=1.0.0
 requests>=2.32.0
 
 # Optional: Production deployment
 gunicorn>=23.0.0
+
+# Development
+# langchain-cli  # Uncomment if using LangChain CLI tools
