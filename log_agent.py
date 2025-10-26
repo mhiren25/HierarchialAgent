@@ -31,19 +31,22 @@ def fetch_order_logs(order_id: str, order_date: str = None) -> str:
     Returns:
         JSON string containing log entries for the order
     """
-    # Parse the date
-    if order_date:
+    # Parse the date - handle None, empty string, and various formats
+    parsed_date = datetime.now()  # Default to current date
+    
+    if order_date and order_date.strip():  # Check if order_date is not None and not empty
         try:
             if date_parser:
+                # Try parsing with dateutil
                 parsed_date = date_parser.parse(order_date)
             else:
                 # Fallback to basic parsing
-                parsed_date = datetime.fromisoformat(order_date.replace('Z', '+00:00'))
+                # Handle ISO format with or without timezone
+                date_str = order_date.replace('Z', '+00:00')
+                parsed_date = datetime.fromisoformat(date_str)
         except Exception as e:
-            print(f"Date parsing failed: {e}, using current date")
+            print(f"Date parsing failed for '{order_date}': {e}, using current date")
             parsed_date = datetime.now()
-    else:
-        parsed_date = datetime.now()
     
     date_str = parsed_date.strftime('%Y-%m-%d')
     
@@ -123,14 +126,17 @@ def compare_order_execution(order_specs: str) -> str:
     Supports orders from same or different dates.
     
     Args:
-        order_specs: JSON string with order specifications. Format:
-                    '[{"order_id": "GOOD001", "date": "2025-10-18"}, {"order_id": "BAD001", "date": "2025-10-19"}]'
-                    Or simple comma-separated: "GOOD001,BAD001" (uses current date for all)
+        order_specs: Can be:
+                    1. JSON array: '[{"order_id": "GOOD001", "date": "2025-10-18"}, {"order_id": "BAD001"}]'
+                    2. Comma-separated: "GOOD001,BAD001" (uses current date for all)
+                    3. With dates: "GOOD001 from yesterday, BAD001 from today"
         
     Returns:
         JSON string with detailed comparison analysis
     """
     # Parse order specifications
+    order_list = []
+    
     try:
         # Try parsing as JSON first
         specs = json.loads(order_specs)
@@ -138,10 +144,14 @@ def compare_order_execution(order_specs: str) -> str:
             order_list = specs
         else:
             order_list = [specs]
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         # Fallback to comma-separated format
-        ids = [oid.strip() for oid in order_specs.split(",")]
-        order_list = [{"order_id": oid, "date": None} for oid in ids]
+        ids = [oid.strip() for oid in str(order_specs).split(",")]
+        order_list = [{"order_id": oid, "date": None} for oid in ids if oid]
+    
+    # Ensure we have valid orders
+    if not order_list:
+        return json.dumps({"error": "No valid order IDs provided"})
     
     all_logs = {}
     order_dates = {}
@@ -151,9 +161,13 @@ def compare_order_execution(order_specs: str) -> str:
             order_id = spec.get("order_id")
             date = spec.get("date")
         else:
-            order_id = spec
+            order_id = str(spec)
             date = None
         
+        # Clean up date - handle None, empty strings
+        if date and not date.strip():
+            date = None
+            
         log_data = json.loads(fetch_order_logs.invoke({"order_id": order_id, "order_date": date}))
         all_logs[order_id] = log_data
         order_dates[order_id] = log_data.get("order_date", "unknown")
@@ -239,6 +253,10 @@ def analyze_failure_pattern(order_id: str, order_date: str = None) -> str:
     Returns:
         JSON string with failure analysis and root cause
     """
+    # Handle None or empty date
+    if not order_date or not order_date.strip():
+        order_date = None
+    
     logs = json.loads(fetch_order_logs.invoke({"order_id": order_id, "order_date": order_date}))
     
     if "error" in logs:
