@@ -1,15 +1,14 @@
 """
 Database Team - NLP to SQL Query Generation and Execution
 Enhanced with LangChain SQL Agent patterns and few-shot prompting
-Uses LangGraph 0.2+ pattern (non-deprecated)
+Uses LangGraph v1+ pattern with create_agent from langchain.agents
 """
 from typing import List, Dict, Any
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate, FewShotPromptTemplate
-from langgraph.prebuilt import ToolNode
-from langgraph.graph import StateGraph, MessagesState, START, END
+from langchain.agents import create_agent
 import sqlite3
 import json
 
