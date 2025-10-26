@@ -1,15 +1,15 @@
 """
 Database Team - NLP to SQL Query Generation and Execution
 Enhanced with LangChain SQL Agent patterns and few-shot prompting
+Uses LangGraph 0.2+ pattern (non-deprecated)
 """
 from typing import List, Dict, Any
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_sql_agent
-from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langchain_community.utilities import SQLDatabase
 from langchain.prompts import PromptTemplate, FewShotPromptTemplate
+from langgraph.prebuilt import ToolNode
+from langgraph.graph import StateGraph, MessagesState, START, END
 import sqlite3
 import json
 
@@ -426,8 +426,11 @@ DB_TEAM_PROMPT = """You are a Database Query Specialist with expertise in SQL an
 4. Provide insights or summary of findings"""
 
 def create_db_agent(llm: ChatOpenAI):
-    """Create the database query agent using new pattern"""
-    from langgraph.prebuilt import create_react_agent
+    """
+    Create the database query agent using LangGraph v1+ pattern.
+    Uses create_agent from langchain.agents (recommended for LangGraph v1+)
+    """
+    from langchain.agents import create_agent
     
     tools = [
         list_tables,
@@ -447,8 +450,11 @@ def create_db_agent(llm: ChatOpenAI):
         examples=examples_text
     )
     
-    return create_react_agent(
-        llm,
-        tools,
-        state_modifier=system_prompt
+    # Create agent using the new recommended approach
+    agent = create_agent(
+        llm=llm,
+        tools=tools,
+        prompt=system_prompt
     )
+    
+    return agent
