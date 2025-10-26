@@ -22,22 +22,25 @@ class AgentState(TypedDict):
 SUPERVISOR_PROMPT = """You are a supervisor managing three specialized agent teams:
 
 1. **log_team**: Analyzes system logs, compares orders (good vs bad), identifies failures
-   - Use for: log analysis, order comparison, failure investigation
+   - Keywords: "log", "order", "compare", "GOOD", "BAD", "failure", "error in order"
    
 2. **knowledge_team**: Retrieves information from RAG knowledge base
-   - Use for: documentation, troubleshooting guides, system configuration
+   - Keywords: "what", "how", "why", "explain", "causes", "documentation", "guide"
    
 3. **db_team**: Converts natural language to SQL and queries database
-   - Use for: data queries, statistics, database lookups
+   - Keywords: "show", "list", "all", "count", "total", "revenue", "statistics", "data", "query"
 
-Your job is to route the user's query to the appropriate team(s).
+IMPORTANT ROUTING RULES:
+- If query mentions specific order IDs (GOOD001, BAD001, etc.) → log_team
+- If query asks "what causes" or "explain" → knowledge_team
+- If query asks "show me all", "list", "count", "total" → db_team
+- If query is about data/statistics without order IDs → db_team
+- If already got response from a team, respond with FINISH
 
 Given the conversation so far, who should act next?
 Or should we FINISH if the user's request has been fully addressed?
 
-Select one of: {options}
-
-Respond with ONLY the team name or FINISH."""
+Select one of: {options}"""
 
 def create_supervisor_node(llm: ChatOpenAI, members: list[str]):
     """
