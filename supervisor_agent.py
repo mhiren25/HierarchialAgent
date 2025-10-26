@@ -22,156 +22,84 @@ class AgentState(TypedDict):
 SUPERVISOR_PROMPT = """You are a supervisor managing three specialized agent teams:
 
 1. **log_team**: Analyzes system logs, compares orders (good vs bad), identifies failures
-   - Keywords: "log", "order", "compare", "GOOD", "BAD", "failure", "error in order"
    
 2. **knowledge_team**: Retrieves information from RAG knowledge base
-   - Keywords: "what", "how", "why", "explain", "causes", "documentation", "guide"
    
 3. **db_team**: Converts natural language to SQL and queries database
-   - Keywords: "show", "list", "all", "count", "total", "revenue", "statistics", "data", "query"
 
-IMPORTANT ROUTING RULES:
-- If query mentions specific order IDs (GOOD001, BAD001, etc.) → log_team
-- If query asks "what causes" or "explain" → knowledge_team
-- If query asks "show me all", "list", "count", "total" → db_team
-- If query is about data/statistics without order IDs → db_team
+Your job is to route the user's query to the appropriate team.
 
-FOLLOW-UP HANDLING:
-- If user says "also show", "and query", "check the database" → route to appropriate team
-- If user says "explain that", "why", "tell me more" after log analysis → knowledge_team
-- Context matters: "why did that fail?" after discussing an order → knowledge_team
-- "Show me the data" after any discussion → db_team
+Routing guidelines:
+- Order IDs (GOOD001, BAD001) or "compare orders" → log_team
+- "show", "list", "count", "total", "statistics" → db_team  
+- "what", "why", "explain", "how" → knowledge_team
 
-Given the conversation context and current query, which team should act next?
-
-Select one of: {options}"""
+Respond with ONLY: log_team, knowledge_team, db_team, or FINISH"""
 
 def create_supervisor_node(llm: ChatOpenAI, members: list[str]):
     """
     Create a supervisor node that routes to different team members.
-    This is the official LangGraph pattern from their examples.
     """
     options = ["FINISH"] + members
-    
-    # Define the routing schema
-    class RouteResponse(TypedDict):
-        """Worker to route to next."""
-        next: Literal[*options]
-    
-    # Create the supervisor prompt with available options
     system_prompt = SUPERVISOR_PROMPT.format(options=", ".join(options))
     
     def supervisor_node(state: AgentState) -> dict:
         """Supervisor that routes to teams"""
         messages = state["messages"]
         
-        # Get the user's query
+        # Get the last user message
         user_query = ""
-        user_messages = []
-        for msg in messages:
+        for msg in reversed(messages):
             if hasattr(msg, 'type') and msg.type == 'human':
-                user_messages.append(msg.content)
+                user_query = msg.content.lower()
+                break
         
-        if user_messages:
-            user_query = user_messages[-1].lower()
+        if not user_query:
+            return {"next": "FINISH"}
         
-        # Check if we've already gotten responses from agents in THIS conversation
-        # Count responses since last user message
-        responses_since_last_user = 0
+        # Count AI responses AFTER the last user message (this turn only)
+        ai_count_this_turn = 0
         for msg in reversed(messages):
             if hasattr(msg, 'type'):
                 if msg.type == 'human':
-                    break
-                elif msg.type == 'ai' and hasattr(msg, 'content') and len(msg.content) > 50:
-                    responses_since_last_user += 1
+                    break  # Stop counting when we hit the user message
+                if msg.type == 'ai':
+                    ai_count_this_turn += 1
         
-        # If we just got a substantial response, finish
-        if responses_since_last_user >= 1:
+        # If we already got a response this turn, finish
+        if ai_count_this_turn > 0:
             return {"next": "FINISH"}
         
-        # Get conversation context - what has been discussed
-        conversation_context = " ".join(user_messages[-3:])  # Last 3 user messages for context
-        
-        # Smart routing based on query content
-        next_agent = "FINISH"
-        
-        # Check for order IDs (GOOD001, BAD001, ORD123, etc.)
+        # Simple keyword-based routing
         import re
+        
+        # Check for order IDs
         has_order_ids = bool(re.search(r'\b[A-Z]+\d+\b', user_query))
         
-        # Check what agents have been called in this conversation turn
-        agents_called_this_turn = []
-        for msg in reversed(messages):
-            if hasattr(msg, 'type') and msg.type == 'human':
-                break  # Stop at last user message
-            if hasattr(msg, 'name') and msg.name:
-                agents_called_this_turn.append(msg.name)
+        # Route based on keywords
+        if has_order_ids or "compare" in user_query:
+            return {"next": "log_team"}
         
-        # Routing logic with priority and context awareness
+        if any(word in user_query for word in ["show", "list", "count", "total", "all orders", "statistics", "revenue", "how many"]):
+            return {"next": "db_team"}
         
-        # Follow-up questions with context
-        if len(user_messages) > 1:
-            # This is a follow-up question
-            previous_context = " ".join(user_messages[:-1]).lower()
-            
-            # If previous context had order IDs but current doesn't, check for references
-            if not has_order_ids and bool(re.search(r'\b[A-Z]+\d+\b', previous_context)):
-                # Keywords suggesting continuation of log discussion
-                if any(word in user_query for word in ["why", "what happened", "explain", "tell me more", "what about", "and", "also"]):
-                    has_order_ids = True  # Treat as if it has order IDs
+        if any(word in user_query for word in ["what", "why", "explain", "how", "causes", "guide", "documentation"]):
+            return {"next": "knowledge_team"}
         
-        # Priority 1: Explicit database queries
-        if any(word in user_query for word in ["show me all", "show all", "list all", "count", "total", "revenue", "statistics", "how many", "give me all"]):
-            if "db_team" not in agents_called_this_turn:
-                next_agent = "db_team"
-            else:
-                next_agent = "FINISH"
+        # Fallback: Ask LLM
+        routing_prompt = f"{system_prompt}\n\nUser query: {user_query}\n\nWhich team?"
+        response = llm.invoke([SystemMessage(content=routing_prompt)])
         
-        # Priority 2: Order IDs present or referenced
-        elif has_order_ids or "compare order" in user_query or "order comparison" in user_query:
-            if "log_team" not in agents_called_this_turn:
-                next_agent = "log_team"
-            else:
-                next_agent = "FINISH"
+        content = response.content.strip().lower()
         
-        # Priority 3: Knowledge/explanation requests
-        elif any(word in user_query for word in ["what causes", "why does", "explain", "how does", "what is", "documentation", "guide", "tell me about"]):
-            if "knowledge_team" not in agents_called_this_turn:
-                next_agent = "knowledge_team"
-            else:
-                next_agent = "FINISH"
-        
-        # Priority 4: Check for follow-up clarifications
-        elif any(word in user_query for word in ["also show", "also get", "and query", "check the", "look up"]):
-            # Follow-up requesting additional information
-            if "show" in user_query or "query" in user_query or "data" in user_query:
-                if "db_team" not in agents_called_this_turn:
-                    next_agent = "db_team"
-            elif "explain" in user_query or "what" in user_query:
-                if "knowledge_team" not in agents_called_this_turn:
-                    next_agent = "knowledge_team"
-        
-        # Fallback: Use LLM for ambiguous cases
+        if "log" in content:
+            return {"next": "log_team"}
+        elif "knowledge" in content:
+            return {"next": "knowledge_team"}
+        elif "db" in content or "database" in content:
+            return {"next": "db_team"}
         else:
-            routing_messages = [
-                SystemMessage(content=system_prompt),
-                SystemMessage(content=f"Conversation context: {conversation_context}"),
-                HumanMessage(content=f"Current query: {user_query}\n\nWhich team should handle this? Respond with ONLY: log_team, knowledge_team, db_team, or FINISH")
-            ]
-            
-            response = llm.invoke(routing_messages)
-            content = response.content.strip().upper()
-            
-            if "LOG" in content and "log_team" not in agents_called_this_turn:
-                next_agent = "log_team"
-            elif "KNOWLEDGE" in content and "knowledge_team" not in agents_called_this_turn:
-                next_agent = "knowledge_team"
-            elif "DB" in content and "db_team" not in agents_called_this_turn:
-                next_agent = "db_team"
-            else:
-                next_agent = "FINISH"
-        
-        return {"next": next_agent}
+            return {"next": "FINISH"}
     
     return supervisor_node
 
