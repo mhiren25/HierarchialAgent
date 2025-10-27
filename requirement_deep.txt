@@ -1,0 +1,29 @@
+# Core Dependencies
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+websockets==12.0
+python-dotenv==1.0.0
+
+# LangChain v1+ (Latest stable versions)
+langchain==1.0.2
+langchain-core==1.0.2
+langchain-openai==1.0.2
+langchain-community==1.0.2
+
+# LangGraph (Latest)
+langgraph==0.2.60
+
+# Azure OpenAI
+openai==1.54.0
+
+# Database (optional, for production)
+# sqlalchemy==2.0.25
+# psycopg2-binary==2.9.9
+
+# Vector DB (optional, for production RAG)
+# pinecone-client==3.0.0
+# chromadb==0.4.22
+
+# Utilities
+pydantic==2.5.3
+pydantic-settings==2.1.0
